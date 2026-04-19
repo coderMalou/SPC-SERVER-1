@@ -1,0 +1,25 @@
+{
+  "name": "spc_code",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.6.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "jstat": "^1.9.6",
+    "lodash": "^4.17.23"
+  }
+}
