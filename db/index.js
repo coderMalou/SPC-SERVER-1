@@ -85,6 +85,24 @@ try { db.exec(`ALTER TABLE tasks ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;`
 try { db.exec(`ALTER TABLE tasks ADD COLUMN deleted_at TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE measurement_groups ADD COLUMN status INTEGER NOT NULL DEFAULT 0;`); } catch (e) {}
 
+// 生成服从正态分布的随机数（在 min 和 max 之间，中心为 target）
+function generateNormalSamples(target, lsl, usl, count) {
+  const samples = [];
+  const range = usl - lsl;
+  const normalRange = range * 0.4; // 控制在 ±0.4*range 范围内波动
+  for (let i = 0; i < count; i++) {
+    // Box-Muller 变换生成正态分布随机数
+    const u1 = Math.random();
+    const u2 = Math.random();
+    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    let value = target + z * (normalRange / 3); // 3σ 范围
+    // 限制在规格限内，但允许偶尔超限（用于测试判异规则）
+    value = Math.max(lsl - range * 0.1, Math.min(usl + range * 0.1, value));
+    samples.push(parseFloat(value.toFixed(4)));
+  }
+  return samples;
+}
+
 function ensureSeedData() {
   const c = db.prepare('SELECT COUNT(*) c FROM work_orders').get().c;
   if (c > 0) return;
@@ -169,6 +187,25 @@ function ensureSeedData() {
         1,
         now
       );
+    }
+
+    // 为每个任务生成测量数据（25个子组，每组5个样本）
+    const taskRows = db.prepare('SELECT id, target_value, usl, lsl FROM tasks WHERE work_order_id = ?').all(workOrderId);
+    const insertGroup = db.prepare(`
+      INSERT INTO measurement_groups (task_id, group_no, measure_time, sample_values, operator, remark, enabled, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const task of taskRows) {
+      const baseTime = new Date('2026-04-20T08:00:00');
+      for (let g = 0; g < 25; g++) {
+        const groupNo = g + 1;
+        const measureTime = new Date(baseTime.getTime() + g * 30 * 60 * 1000); // 每30分钟一个子组
+        const samples = generateNormalSamples(task.target_value, task.lsl, task.usl, 5);
+        const operator = '操作员A';
+        const remark = g === 12 ? '换料调整' : (g === 18 ? '设备保养后' : '');
+        insertGroup.run(task.id, groupNo, measureTime.toISOString().slice(0, 19).replace('T', ' '), JSON.stringify(samples), operator, remark, 1, 0);
+      }
     }
   });
   tx();

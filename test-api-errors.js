@@ -29,13 +29,13 @@ async function main() {
   let r = await request('POST', '/api/auth/login', {});
   if (assert('登录空 body 应 400', r.status === 400, `得到 ${r.status}`)) passed++; else failed++;
 
-  r = await request('POST', '/api/auth/login', { username: 'spc_admin' });
+  r = await request('POST', '/api/auth/login', { username: 'admin' });
   if (assert('登录缺密码应 400', r.status === 400, `得到 ${r.status}`)) passed++; else failed++;
 
   r = await request('POST', '/api/auth/login', { username: 'wrong', password: 'wrong' });
   if (assert('错误账号密码应 401', r.status === 401, `得到 ${r.status}`)) passed++; else failed++;
 
-  r = await request('POST', '/api/auth/login', { username: 'spc_admin', password: '123456' });
+  r = await request('POST', '/api/auth/login', { username: 'admin', password: '123456' });
   if (!r.ok || !r.data.data || !r.data.data.token) {
     console.log('[FAIL] 正确账号应返回 token', `得到 ${r.status}`);
     failed++;

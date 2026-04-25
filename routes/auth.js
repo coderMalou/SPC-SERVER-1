@@ -5,7 +5,7 @@ const config = require('../config');
 const { fail } = require('../utils/response');
 
 const mockUser = {
-  username: 'spc_admin',
+  username: 'admin',
   password: '123456',
   role: 'admin'
 };
