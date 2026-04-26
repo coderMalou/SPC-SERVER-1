@@ -75,7 +75,9 @@ router.post('/', (req, res) => {
       if (exists) return fail(res, 400, '工作任务号已存在');
     }
     const subgroupSize = Math.min(25, Math.max(5, parseInt(b.subgroupSize, 10) || 5));
-    const totalSampleSize = Math.max(subgroupSize, parseInt(b.totalSampleSize, 10) || 200);
+    let totalSampleSize = Math.max(subgroupSize, parseInt(b.totalSampleSize, 10) || 200);
+    // 总体样本量必须是组内样本量的整倍数
+    totalSampleSize = Math.ceil(totalSampleSize / subgroupSize) * subgroupSize;
     if (b.usl != null && b.lsl != null && Number(b.usl) <= Number(b.lsl)) return fail(res, 400, 'USL 必须大于 LSL');
     db.prepare(`
       INSERT INTO tasks (work_order_id, task_no, line_no, product_code, product_name, spec, unit,
@@ -103,7 +105,12 @@ router.put('/:id', (req, res) => {
     const b = req.body || {};
     if (b.usl != null && b.lsl != null && Number(b.usl) !== 0 && Number(b.lsl) !== 0 && Number(b.usl) <= Number(b.lsl)) return fail(res, 400, 'USL 必须大于 LSL');
     const subgroupSize = b.subgroupSize != null ? Math.min(25, Math.max(5, parseInt(b.subgroupSize, 10))) : undefined;
-    const totalSampleSize = b.totalSampleSize != null ? parseInt(b.totalSampleSize, 10) : undefined;
+    let totalSampleSize = b.totalSampleSize != null ? parseInt(b.totalSampleSize, 10) : undefined;
+    // 总体样本量必须是组内样本量的整倍数
+    if (totalSampleSize != null) {
+      const ss = subgroupSize || db.prepare('SELECT subgroup_size FROM tasks WHERE id = ?').get(id)?.subgroup_size || 5;
+      totalSampleSize = Math.ceil(Math.max(ss, totalSampleSize) / ss) * ss;
+    }
     const fields = [];
     const vals = [];
     ['product_code', 'product_name', 'spec', 'unit', 'line_no', 'process_route_name', 'process_name', 'quality_char', 'target_value', 'usl', 'lsl', 'equipment_code', 'instrument_code'].forEach(f => {
