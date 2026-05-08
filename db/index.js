@@ -84,6 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_mg_task ON measurement_groups(task_id);
 try { db.exec(`ALTER TABLE tasks ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;`); } catch (e) {}
 try { db.exec(`ALTER TABLE tasks ADD COLUMN deleted_at TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE measurement_groups ADD COLUMN status INTEGER NOT NULL DEFAULT 0;`); } catch (e) {}
+try { db.exec(`ALTER TABLE tasks ADD COLUMN process_sequence TEXT;`); } catch (e) {}
 
 // 生成服从正态分布的随机数（在 min 和 max 之间，中心为 target）
 function generateNormalSamples(target, lsl, usl, count) {

@@ -14,7 +14,8 @@ router.get('/', (req, res) => {
       SELECT t.id, t.work_order_id AS workOrderId, w.order_no AS orderNo,
         t.task_no AS taskNo, t.line_no AS lineNo, t.product_code AS productCode,
         t.product_name AS productName, t.spec, t.unit, t.process_route_name AS processRouteName,
-        t.process_name AS processName, t.quality_char AS qualityChar, t.target_value AS targetValue,
+        t.process_name AS processName, t.process_sequence AS processSequence,
+        t.quality_char AS qualityChar, t.target_value AS targetValue,
         t.usl, t.lsl, t.subgroup_size AS subgroupSize, t.total_sample_size AS totalSampleSize,
         t.equipment_code AS equipmentCode, t.instrument_code AS instrumentCode,
         t.status, t.created_at AS createdAt, t.enabled_at AS enabledAt
@@ -47,6 +48,7 @@ router.get('/:id', (req, res) => {
       taskNo: row.task_no, lineNo: row.line_no, productCode: row.product_code,
       productName: row.product_name, spec: row.spec, unit: row.unit,
       processRouteName: row.process_route_name, processName: row.process_name,
+      processSequence: row.process_sequence,
       qualityChar: row.quality_char, targetValue: row.target_value,
       usl: row.usl, lsl: row.lsl, subgroupSize: row.subgroup_size,
       totalSampleSize: row.total_sample_size, equipmentCode: row.equipment_code,
@@ -81,12 +83,13 @@ router.post('/', (req, res) => {
     if (b.usl != null && b.lsl != null && Number(b.usl) <= Number(b.lsl)) return fail(res, 400, 'USL 必须大于 LSL');
     db.prepare(`
       INSERT INTO tasks (work_order_id, task_no, line_no, product_code, product_name, spec, unit,
-        process_route_name, process_name, quality_char, target_value, usl, lsl,
+        process_route_name, process_name, process_sequence, quality_char, target_value, usl, lsl,
         subgroup_size, total_sample_size, equipment_code, instrument_code, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `).run(
       workOrderId, taskNo, lineNo, b.productCode || '', b.productName || '', b.spec || '', b.unit || '',
-      b.processRouteName || '', b.processName || '', b.qualityChar || '', Number(b.targetValue) || 0,
+      b.processRouteName || '', b.processName || '', b.processSequence || '',
+      b.qualityChar || '', Number(b.targetValue) || 0,
       Number(b.usl) || 0, Number(b.lsl) || 0, subgroupSize, totalSampleSize,
       b.equipmentCode || null, b.instrumentCode || null
     );
@@ -113,7 +116,7 @@ router.put('/:id', (req, res) => {
     }
     const fields = [];
     const vals = [];
-    ['product_code', 'product_name', 'spec', 'unit', 'line_no', 'process_route_name', 'process_name', 'quality_char', 'target_value', 'usl', 'lsl', 'equipment_code', 'instrument_code'].forEach(f => {
+    ['product_code', 'product_name', 'spec', 'unit', 'line_no', 'process_route_name', 'process_name', 'process_sequence', 'quality_char', 'target_value', 'usl', 'lsl', 'equipment_code', 'instrument_code'].forEach(f => {
       const key = f.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
       if (b[key] !== undefined) { fields.push(`${f} = ?`); vals.push(b[key]); }
     });
