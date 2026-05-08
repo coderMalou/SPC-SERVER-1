@@ -14,7 +14,7 @@ async function request(method, path, body = null, token = null) {
 
 async function main() {
   console.log('========== 1. 登录 ==========');
-  const loginRes = await request('POST', '/api/auth/login', { username: 'spc_admin', password: '123456' });
+  const loginRes = await request('POST', '/api/auth/login', { username: 'admin', password: '123456' });
   if (!loginRes.ok) {
     console.log('登录失败:', loginRes.data);
     return;

@@ -14,7 +14,8 @@ router.get('/', (req, res) => {
       SELECT t.id, t.work_order_id AS workOrderId, w.order_no AS orderNo,
         t.task_no AS taskNo, t.line_no AS lineNo, t.product_code AS productCode,
         t.product_name AS productName, t.spec, t.unit, t.process_route_name AS processRouteName,
-        t.process_name AS processName, t.quality_char AS qualityChar, t.target_value AS targetValue,
+        t.process_name AS processName, t.process_sequence AS processSequence,
+        t.quality_char AS qualityChar, t.target_value AS targetValue,
         t.usl, t.lsl, t.subgroup_size AS subgroupSize, t.total_sample_size AS totalSampleSize,
         t.equipment_code AS equipmentCode, t.instrument_code AS instrumentCode,
         t.status, t.created_at AS createdAt, t.enabled_at AS enabledAt
@@ -47,6 +48,7 @@ router.get('/:id', (req, res) => {
       taskNo: row.task_no, lineNo: row.line_no, productCode: row.product_code,
       productName: row.product_name, spec: row.spec, unit: row.unit,
       processRouteName: row.process_route_name, processName: row.process_name,
+      processSequence: row.process_sequence,
       qualityChar: row.quality_char, targetValue: row.target_value,
       usl: row.usl, lsl: row.lsl, subgroupSize: row.subgroup_size,
       totalSampleSize: row.total_sample_size, equipmentCode: row.equipment_code,
@@ -75,16 +77,19 @@ router.post('/', (req, res) => {
       if (exists) return fail(res, 400, '工作任务号已存在');
     }
     const subgroupSize = Math.min(25, Math.max(5, parseInt(b.subgroupSize, 10) || 5));
-    const totalSampleSize = Math.max(subgroupSize, parseInt(b.totalSampleSize, 10) || 200);
+    let totalSampleSize = Math.max(subgroupSize, parseInt(b.totalSampleSize, 10) || 200);
+    // 总体样本量必须是组内样本量的整倍数
+    totalSampleSize = Math.ceil(totalSampleSize / subgroupSize) * subgroupSize;
     if (b.usl != null && b.lsl != null && Number(b.usl) <= Number(b.lsl)) return fail(res, 400, 'USL 必须大于 LSL');
     db.prepare(`
       INSERT INTO tasks (work_order_id, task_no, line_no, product_code, product_name, spec, unit,
-        process_route_name, process_name, quality_char, target_value, usl, lsl,
+        process_route_name, process_name, process_sequence, quality_char, target_value, usl, lsl,
         subgroup_size, total_sample_size, equipment_code, instrument_code, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `).run(
       workOrderId, taskNo, lineNo, b.productCode || '', b.productName || '', b.spec || '', b.unit || '',
-      b.processRouteName || '', b.processName || '', b.qualityChar || '', Number(b.targetValue) || 0,
+      b.processRouteName || '', b.processName || '', b.processSequence || '',
+      b.qualityChar || '', Number(b.targetValue) || 0,
       Number(b.usl) || 0, Number(b.lsl) || 0, subgroupSize, totalSampleSize,
       b.equipmentCode || null, b.instrumentCode || null
     );
@@ -101,12 +106,17 @@ router.put('/:id', (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const b = req.body || {};
-    if (b.usl != null && b.lsl != null && Number(b.usl) <= Number(b.lsl)) return fail(res, 400, 'USL 必须大于 LSL');
+    if (b.usl != null && b.lsl != null && Number(b.usl) !== 0 && Number(b.lsl) !== 0 && Number(b.usl) <= Number(b.lsl)) return fail(res, 400, 'USL 必须大于 LSL');
     const subgroupSize = b.subgroupSize != null ? Math.min(25, Math.max(5, parseInt(b.subgroupSize, 10))) : undefined;
-    const totalSampleSize = b.totalSampleSize != null ? parseInt(b.totalSampleSize, 10) : undefined;
+    let totalSampleSize = b.totalSampleSize != null ? parseInt(b.totalSampleSize, 10) : undefined;
+    // 总体样本量必须是组内样本量的整倍数
+    if (totalSampleSize != null) {
+      const ss = subgroupSize || db.prepare('SELECT subgroup_size FROM tasks WHERE id = ?').get(id)?.subgroup_size || 5;
+      totalSampleSize = Math.ceil(Math.max(ss, totalSampleSize) / ss) * ss;
+    }
     const fields = [];
     const vals = [];
-    ['process_route_name', 'process_name', 'quality_char', 'target_value', 'usl', 'lsl', 'equipment_code', 'instrument_code'].forEach(f => {
+    ['product_code', 'product_name', 'spec', 'unit', 'line_no', 'process_route_name', 'process_name', 'process_sequence', 'quality_char', 'target_value', 'usl', 'lsl', 'equipment_code', 'instrument_code'].forEach(f => {
       const key = f.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
       if (b[key] !== undefined) { fields.push(`${f} = ?`); vals.push(b[key]); }
     });
@@ -115,8 +125,8 @@ router.put('/:id', (req, res) => {
     if (b.taskNo !== undefined) { fields.push('task_no = ?'); vals.push(b.taskNo); }
     if (!fields.length) return fail(res, 400, '无有效更新字段');
     vals.push(id);
-    db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ? AND (deleted IS NULL OR deleted = 0)`).run(...vals);
-    if (db.prepare('SELECT changes()').get()['changes()'] === 0) return fail(res, 404, '任务不存在');
+    const result = db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ? AND (deleted IS NULL OR deleted = 0)`).run(...vals);
+    if (result.changes === 0) return fail(res, 404, '任务不存在');
     return ok(res, null, '更新成功');
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) return fail(res, 400, '工作任务号已存在');
@@ -131,25 +141,26 @@ router.put('/:id/status', (req, res) => {
     const status = parseInt(req.body?.status, 10);
     if (status !== 0 && status !== 1) return fail(res, 400, 'status 应为 0 或 1');
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    let statusResult;
     if (status === 1) {
-      db.prepare('UPDATE tasks SET status = 1, enabled_at = ? WHERE id = ? AND (deleted IS NULL OR deleted = 0)').run(now, id);
+      statusResult = db.prepare('UPDATE tasks SET status = 1, enabled_at = ? WHERE id = ? AND (deleted IS NULL OR deleted = 0)').run(now, id);
     } else {
-      db.prepare('UPDATE tasks SET status = 0 WHERE id = ? AND (deleted IS NULL OR deleted = 0)').run(id);
+      statusResult = db.prepare('UPDATE tasks SET status = 0 WHERE id = ? AND (deleted IS NULL OR deleted = 0)').run(id);
     }
-    if (db.prepare('SELECT changes()').get()['changes()'] === 0) return fail(res, 404, '任务不存在');
+    if (statusResult.changes === 0) return fail(res, 404, '任务不存在');
     return ok(res, null, '已更新');
   } catch (e) {
     return fail(res, 500, e.message);
   }
 });
 
- 
+
 router.delete('/:id', (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    db.prepare('UPDATE tasks SET deleted = 1, deleted_at = ? WHERE id = ? AND (deleted IS NULL OR deleted = 0)').run(now, id);
-    if (db.prepare('SELECT changes()').get()['changes()'] === 0) return fail(res, 404, '任务不存在');
+    const deleteResult = db.prepare('UPDATE tasks SET deleted = 1, deleted_at = ? WHERE id = ? AND (deleted IS NULL OR deleted = 0)').run(now, id);
+    if (deleteResult.changes === 0) return fail(res, 404, '任务不存在');
     return ok(res, null, '已删除');
   } catch (e) {
     return fail(res, 500, e.message);
@@ -160,8 +171,8 @@ router.delete('/:id', (req, res) => {
 router.put('/:id/restore', (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    db.prepare('UPDATE tasks SET deleted = 0, deleted_at = NULL WHERE id = ? AND deleted = 1').run(id);
-    if (db.prepare('SELECT changes()').get()['changes()'] === 0) return fail(res, 404, '任务不存在或未删除');
+    const restoreResult = db.prepare('UPDATE tasks SET deleted = 0, deleted_at = NULL WHERE id = ? AND deleted = 1').run(id);
+    if (restoreResult.changes === 0) return fail(res, 404, '任务不存在或未删除');
     return ok(res, null, '已恢复');
   } catch (e) {
     return fail(res, 500, e.message);

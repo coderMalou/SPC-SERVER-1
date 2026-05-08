@@ -88,7 +88,11 @@ router.post('/task/:taskId', (req, res) => {
     if (!task) return fail(res, 404, '任务不存在');
     const maxGroups = Math.floor(task.total_sample_size / task.subgroup_size);
     const count = db.prepare('SELECT COUNT(*) c FROM measurement_groups WHERE task_id = ?').get(taskId).c;
-    if (count >= maxGroups) return fail(res, 400, `子组数不能超过 ${maxGroups}`);
+    // 若超过当前限制，自动更新总体样本量
+    if (count >= maxGroups) {
+      const newTotalSampleSize = (count + 1) * task.subgroup_size;
+      db.prepare('UPDATE tasks SET total_sample_size = ? WHERE id = ?').run(newTotalSampleSize, taskId);
+    }
     const b = req.body || {};
     const groupNo = parseInt(b.groupNo, 10) || (count + 1);
     const existing = db.prepare('SELECT id FROM measurement_groups WHERE task_id = ? AND group_no = ?').get(taskId, groupNo);
@@ -119,7 +123,6 @@ router.post('/task/:taskId/batch', (req, res) => {
     const taskId = parseInt(req.params.taskId, 10);
     const task = db.prepare('SELECT id, subgroup_size, total_sample_size FROM tasks WHERE id = ? AND (deleted IS NULL OR deleted = 0)').get(taskId);
     if (!task) return fail(res, 404, '任务不存在');
-    const maxGroups = Math.floor(task.total_sample_size / task.subgroup_size);
     const n = Math.min(25, Math.max(5, task.subgroup_size));
     const items = Array.isArray(req.body) ? req.body : (req.body?.items ? req.body.items : []);
     const inserted = [];
@@ -130,7 +133,13 @@ router.post('/task/:taskId/batch', (req, res) => {
       const existing = db.prepare('SELECT id FROM measurement_groups WHERE task_id = ? AND group_no = ?').get(taskId, groupNo);
       if (existing) { errors.push(`子组${groupNo}已存在`); continue; }
       const count = db.prepare('SELECT COUNT(*) c FROM measurement_groups WHERE task_id = ?').get(taskId).c;
-      if (count >= maxGroups) { errors.push('已达最大子组数'); break; }
+      const maxGroups = Math.floor(task.total_sample_size / task.subgroup_size);
+      // 若超过当前限制，自动更新总体样本量
+      if (count >= maxGroups) {
+        const newTotalSampleSize = (count + 1) * task.subgroup_size;
+        db.prepare('UPDATE tasks SET total_sample_size = ? WHERE id = ?').run(newTotalSampleSize, taskId);
+        task.total_sample_size = newTotalSampleSize;
+      }
       let sampleValues = Array.isArray(b.sampleValues) ? b.sampleValues : [];
       while (sampleValues.length < n) sampleValues.push(null);
       const measureTime = b.measureTime || new Date().toISOString().slice(0, 19).replace('T', ' ');

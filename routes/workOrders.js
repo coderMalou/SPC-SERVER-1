@@ -62,4 +62,35 @@ router.put('/:id/enable', (req, res) => {
   }
 });
 
+// 工单树（包含任务列表）
+router.get('/tree', (req, res) => {
+  try {
+    const workOrders = db.prepare(`
+      SELECT id, order_no AS orderNo FROM work_orders WHERE status = 1 ORDER BY id DESC
+    `).all();
+
+    const tasks = db.prepare(`
+      SELECT id, work_order_id AS workOrderId, task_no AS taskNo, process_name AS processName, quality_char AS qualityChar
+      FROM tasks WHERE (deleted IS NULL OR deleted = 0)
+    `).all();
+
+    const result = workOrders.map(wo => ({
+      id: wo.id,
+      orderNo: wo.orderNo,
+      children: tasks
+        .filter(t => t.workOrderId === wo.id)
+        .map(t => ({
+          id: t.id,
+          taskNo: t.taskNo,
+          processName: t.processName,
+          qualityChar: t.qualityChar
+        }))
+    }));
+
+    return ok(res, result);
+  } catch (e) {
+    return fail(res, 500, e.message);
+  }
+});
+
 module.exports = router;
